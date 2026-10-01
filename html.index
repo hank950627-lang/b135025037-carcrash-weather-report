@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>高雄市氣象與交通事故即時資訊看板</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#0284c7',
+              600: '#0369a1',
+              900: '#0c4a6e',
+            },
+            accent: {
+              danger: '#ef4444',
+              warning: '#f59e0b',
+              success: '#10b981',
+              info: '#3b82f6',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'Microsoft JhengHei', 'PingFang TC', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Chart.js CDN for Weather Trend -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    /* Custom scrollbar for dashboard panels */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(51, 65, 85, 0.8);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(100, 116, 139, 1);
+    }
+    .glass-card {
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .pulse-dot {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .3; }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans overflow-x-hidden select-none">
+
+  <!-- Top Navigation Header -->
+  <header class="w-full glass-card border-b border-slate-800/80 px-4 lg:px-8 py-3 flex flex-wrap justify-between items-center z-20 gap-4 shadow-lg sticky top-0">
+    <div class="flex items-center space-x-3">
+      <div class="bg-gradient-to-tr from-cyan-600 to-blue-600 p-2.5 rounded-xl shadow-md shadow-cyan-900/30 flex items-center justify-center">
+        <i class="fa-solid font-bold text-xl text-white fa-display"></i>
+      </div>
+      <div>
+        <h1 class="text-xl lg:text-2xl font-black tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-sky-200 to-blue-400">
+          高雄市智慧治安與氣象即時看板
+        </h1>
+        <p class="text-xs text-slate-400 font-medium flex items-center gap-2">
+          <span><i class="fa-solid fa-location-dot text-cyan-400"></i> 高雄市全區觀測系統</span>
+          <span class="inline-block w-1 h-1 bg-slate-600 rounded-full"></span>
+          <span id="data-mode-badge" class="px-2 py-0.5 rounded text-[10px] bg-sky-900/60 text-sky-300 border border-sky-700/50">
+            預覽示範模式
+          </span>
+        </p>
+      </div>
+    </div>
+
+    <!-- Live Status & Clock -->
+    <div class="flex items-center space-x-4 lg:space-x-6">
+      <!-- Connection Status Badge -->
+      <div id="status-badge" class="flex items-center space-x-2 px-3 py-1.5 rounded-full bg-emerald-950/80 border border-emerald-600/40 text-emerald-400 text-xs font-medium">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 pulse-dot"></span>
+        <span id="status-text">系統連線正常</span>
+      </div>
+
+      <!-- Real-time Digital Clock -->
+      <div class="text-right border-l border-slate-800 pl-4 lg:pl-6">
+        <div id="current-time" class="text-2xl font-mono font-bold tracking-wider text-slate-100">00:00:00</div>
+        <div id="current-date" class="text-xs text-slate-400 font-medium">2026年10月1日 星期四</div>
+      </div>
+
+      <!-- Settings / Config Button -->
+      <button id="open-settings-btn" class="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition-all shadow-sm">
+        <i class="fa-solid fa-gear text-lg"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Dashboard Grid Container -->
+  <main class="flex-1 p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-[1920px] mx-auto w-full">
+
+    <!-- LEFT PANEL: KAOHSIUNG WEATHER (5 COLS) -->
+    <section class="lg:col-span-5 flex flex-col space-y-5">
+      
+      <!-- Weather Hero Card -->
+      <div class="glass-card rounded-2xl p-6 relative overflow-hidden border border-slate-800/80 shadow-xl bg-gradient-to-br from-slate-900/90 via-slate-900/70 to-sky-950/40">
+        <div class="absolute -right-8 -top-8 w-44 h-44 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none"></div>
+
+        <!-- Weather Header & District Picker -->
+        <div class="flex justify-between items-start mb-6">
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="px-2.5 py-0.5 rounded-full bg-cyan-950/80 text-cyan-400 border border-cyan-800/50 text-xs font-semibold tracking-wider uppercase">
+                <i class="fa-solid fa-cloud-sun text-cyan-400 mr-1"></i> 即時氣象觀測
+              </span>
+              <span id="weather-update-time" class="text-xs text-slate-400">10:00 更新</span>
+            </div>
+            <h2 id="weather-location" class="text-2xl font-bold text-white mt-1">高雄市 鳳山區</h2>
+          </div>
+
+          <!-- District Selector -->
+          <select id="district-select" class="bg-slate-800/90 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-2 outline-none focus:border-cyan-500 cursor-pointer">
+            <option value="鳳山區" selected>鳳山區</option>
+            <option value="三民區">三民區</option>
+            <option value="左營區">左營區</option>
+            <option value="苓雅區">苓雅區</option>
+            <option value="鼓山區">鼓山區</option>
+            <option value="楠梓區">楠梓區</option>
+            <option value="小港區">小港區</option>
+            <option value="前鎮區">前鎮區</option>
+          </select>
+        </div>
+
+        <!-- Temperature & Main Condition Block -->
+        <div class="flex items-center justify-between my-2">
+          <div class="flex items-baseline space-x-2">
+            <span id="weather-temp" class="text-6xl lg:text-7xl font-extrabold tracking-tight text-white">29</span>
+            <span class="text-3xl font-light text-cyan-400">°C</span>
+            <div class="ml-2">
+              <div id="weather-condition" class="text-lg font-semibold text-slate-200">多雲時晴</div>
+              <div id="weather-feels" class="text-xs text-slate-400">體感約 32°C</div>
+            </div>
+          </div>
+          
+          <!-- Large Dynamic Weather Icon -->
+          <div id="weather-main-icon" class="text-6xl text-amber-400 drop-shadow-[0_0_15px_rgba(251,191,36,0.3)] transform hover:scale-105 transition-transform">
+            <i class="fa-solid fa-cloud-sun"></i>
+          </div>
+        </div>
+
+        <!-- Meteorological Metrics Bar -->
+        <div class="grid grid-cols-3 gap-3 mt-6 pt-4 border-t border-slate-800/80">
+          <div class="bg-slate-800/40 rounded-xl p-3 text-center border border-slate-800">
+            <span class="text-xs text-slate-400 block mb-1"><i class="fa-solid fa-droplet text-blue-400 mr-1"></i>降雨機率</span>
+            <span id="weather-pop" class="text-lg font-bold text-sky-300">20%</span>
+          </div>
+          <div class="bg-slate-800/40 rounded-xl p-3 text-center border border-slate-800">
+            <span class="text-xs text-slate-400 block mb-1"><i class="fa-solid fa-water text-cyan-400 mr-1"></i>相對濕度</span>
+            <span id="weather-humidity" class="text-lg font-bold text-slate-200">75%</span>
+          </div>
+          <div class="bg-slate-800/40 rounded-xl p-3 text-center border border-slate-800">
+            <span class="text-xs text-slate-400 block mb-1"><i class="fa-solid fa-wind text-teal-400 mr-1"></i>微風西南風</span>
+            <span id="weather-wind" class="text-lg font-bold text-slate-200">2 級</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hourly Forecast Trend Block -->
+      <div class="glass-card rounded-2xl p-5 border border-slate-800/80 flex-1 flex flex-col justify-between">
+        <div class="flex justify-between items-center mb-4">
+          <h3 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+            <i class="fa-solid fa-chart-line text-cyan-400"></i>
+            未來 12 小時氣溫與降雨趨勢
+          </h3>
+          <span class="text-[11px] text-slate-500">CWA 中央氣象署資料來源</span>
+        </div>
+
+        <!-- Chart Container -->
+        <div class="relative w-full h-40">
+          <canvas id="weatherChart"></canvas>
+        </div>
+
+        <!-- Hourly Mini Cards -->
+        <div id="hourly-cards-container" class="grid grid-cols-6 gap-2 mt-4 pt-3 border-t border-slate-800/60 text-center">
+          <!-- Dynamically populated by JS -->
+        </div>
+      </div>
+
+    </section>
+
+    <!-- RIGHT PANEL: KAOHSIUNG TRAFFIC INCIDENTS (7 COLS) -->
+    <section class="lg:col-span-7 flex flex-col space-y-5">
+      
+      <!-- Traffic Section Header & Search Controls -->
+      <div class="glass-card rounded-2xl p-5 border border-slate-800/80 shadow-xl">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+          <div class="flex items-center space-x-3">
+            <div class="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+              <i class="fa-solid fa-car-burst text-lg"></i>
+            </div>
+            <div>
+              <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                高雄市即時道路事故監控
+                <span id="incident-count-badge" class="px-2 py-0.5 text-xs rounded-full bg-amber-950 text-amber-300 border border-amber-700">
+                  載入中...
+                </span>
+              </h2>
+              <p class="text-xs text-slate-400">內政部警政署即時路況/交通事故 API 連線</p>
+            </div>
+          </div>
+
+          <!-- Quick Filter Buttons -->
+          <div class="flex items-center space-x-2 w-full sm:w-auto">
+            <button data-filter="all" class="incident-filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg bg-cyan-600 text-white shadow transition-all">
+              全部
+            </button>
+            <button data-filter="heavy" class="incident-filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-all">
+              嚴重/阻斷
+            </button>
+            <button data-filter="normal" class="incident-filter-btn px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition-all">
+              輕微擦撞
+            </button>
+          </div>
+        </div>
+
+        <!-- Search Input & District Quick Filter -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="sm:col-span-2 relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
+            <input type="text" id="incident-search-input" placeholder="搜尋路名、關鍵字 (例如：民族一路、國道十號)..." class="w-full bg-slate-900/80 border border-slate-700/80 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 outline-none focus:border-cyan-500 transition-colors">
+          </div>
+          <div>
+            <select id="incident-district-filter" class="w-full bg-slate-900/80 border border-slate-700/80 text-slate-200 text-xs rounded-xl px-3 py-2 outline-none focus:border-cyan-500 cursor-pointer">
+              <option value="ALL">全高雄市 (全區)</option>
+              <option value="鳳山區">鳳山區</option>
+              <option value="三民區">三民區</option>
+              <option value="左營區">左營區</option>
+              <option value="苓雅區">苓雅區</option>
+              <option value="鼓山區">鼓山區</option>
+              <option value="楠梓區">楠梓區</option>
+              <option value="前鎮區">前鎮區</option>
+              <option value="仁武區">仁武區</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Traffic Incident Scrollable Cards List -->
+      <div class="glass-card rounded-2xl p-4 border border-slate-800/80 flex-1 flex flex-col justify-between overflow-hidden shadow-inner">
+        <div id="incidents-container" class="space-y-3 overflow-y-auto max-h-[520px] pr-2">
+          <!-- Cards injected via JavaScript -->
+        </div>
+
+        <!-- Empty State Alert (Hidden by default) -->
+        <div id="no-incidents-msg" class="hidden flex-1 flex flex-col items-center justify-center p-8 text-center">
+          <i class="fa-solid fa-shield-halved text-4xl text-emerald-500/60 mb-3"></i>
+          <h4 class="text-sm font-bold text-slate-300">目前無符合條件之道路事故</h4>
+          <p class="text-xs text-slate-500 mt-1">高雄市路況良好，請持續保持行車安全。</p>
+        </div>
+
+        <!-- Incident Summary Stats Footer -->
+        <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400 px-2">
+          <div class="flex items-center space-x-4">
+            <span><i class="fa-solid fa-circle text-[8px] text-red-500 mr-1"></i>嚴重道路受阻: <b id="stat-heavy-count" class="text-slate-200">0</b></span>
+            <span><i class="fa-solid fa-circle text-[8px] text-amber-500 mr-1"></i>一般交通事故: <b id="stat-normal-count" class="text-slate-200">0</b></span>
+          </div>
+          <div id="incidents-last-updated" class="text-[11px] text-slate-500">
+            自動更新倒數: <span id="refresh-countdown" class="text-cyan-400 font-mono font-bold">60</span> 秒
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Footer Bar with Auto-refresh Progress & System Warning -->
+  <footer class="w-full glass-card border-t border-slate-800/80 px-6 py-2.5 flex flex-wrap justify-between items-center text-xs text-slate-400 z-10">
+    <div class="flex items-center space-x-4">
+      <span class="flex items-center gap-1.5">
+        <i class="fa-solid fa-server text-cyan-400"></i> 高雄市數據節點: <span class="text-slate-200 font-medium">Kaohsiung-Node-01</span>
+      </span>
+      <span class="hidden md:inline-block text-slate-700">|</span>
+      <span class="hidden md:inline-block">最後資料快取時間: <span id="last-cache-time" class="text-slate-300">10:00:00</span></span>
+    </div>
+
+    <!-- Error / Retry Indicator Banner -->
+    <div id="error-retry-banner" class="hidden flex items-center space-x-2 text-amber-400 bg-amber-950/40 px-3 py-1 rounded-lg border border-amber-800/50">
+      <i class="fa-solid fa-triangle-exclamation text-xs"></i>
+      <span class="text-[11px]">API 連線異常，啟用優雅降級模式（持續嘗試重連中...）</span>
+    </div>
+
+    <div class="flex items-center space-x-2">
+      <span class="text-[11px] text-slate-500">自動刷新狀態</span>
+      <div class="w-20 bg-slate-800 h-1.5 rounded-full overflow-hidden">
+        <div id="refresh-progress-bar" class="bg-cyan-500 h-full w-full transition-all duration-1000"></div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Settings Drawer / Modal -->
+  <div id="settings-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+    <div class="glass-card max-w-lg w-full rounded-2xl p-6 border border-slate-700/80 shadow-2xl relative">
+      <div class="flex justify-between items-center pb-4 border-b border-slate-800">
+        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-sliders text-cyan-400"></i> 看板 API 與系統設定
+        </h3>
+        <button id="close-settings-btn" class="text-slate-400 hover:text-white p-1">
+          <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4 py-4 text-xs">
+        <!-- Data Source Mode Toggle -->
+        <div>
+          <label class="block text-slate-300 font-semibold mb-2">資料來源模式 (Data Source Mode)</label>
+          <div class="grid grid-cols-2 gap-3">
+            <button type="button" id="mode-mock-btn" class="p-3 rounded-xl border border-cyan-500/80 bg-cyan-950/40 text-cyan-200 font-medium text-left flex items-center justify-between">
+              <div>
+                <div class="font-bold">高仿真模擬展示</div>
+                <div class="text-[10px] text-cyan-400/80 mt-0.5">預設展示高雄市動態真實欄位</div>
+              </div>
+              <i class="fa-solid fa-circle-check text-cyan-400"></i>
+            </button>
+            <button type="button" id="mode-live-btn" class="p-3 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-400 font-medium text-left flex items-center justify-between">
+              <div>
+                <div class="font-bold">實時 API 串接</div>
+                <div class="text-[10px] text-slate-500 mt-0.5">需要 Proxy 及 CWA Authorization</div>
+              </div>
+              <i class="fa-solid fa-circle text-slate-600"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- CWA API Key Input -->
+        <div>
+          <label for="cwa-key-input" class="block text-slate-300 font-semibold mb-1">中央氣象署 CWA API Authorization Key</label>
+          <input type="password" id="cwa-key-input" placeholder="CWA-XXXXXXXXXXXXXXXXXXXXXXXX" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 outline-none focus:border-cyan-500">
+          <p class="text-[10px] text-slate-500 mt-1">取得方式請參閱：<a href="https://opendata.cwa.gov.tw/about/rules" target="_blank" class="text-cyan-400 hover:underline">CWA 開放資料規範</a></p>
+        </div>
+
+        <!-- Backend Proxy Endpoint -->
+        <div>
+          <label for="proxy-url-input" class="block text-slate-300 font-semibold mb-1">內政部事故 Proxy 端點 URL (選填)</label>
+          <input type="text" id="proxy-url-input" placeholder="https://your-backend-proxy.com/api/moi-traffic" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-slate-200 outline-none focus:border-cyan-500">
+          <p class="text-[10px] text-slate-500 mt-1">避免瀏覽器 CORS 限制及直接下載龐大過濾檔之 Serverless/Node 後端端點</p>
+        </div>
+
+        <!-- Refresh Interval Selector -->
+        <div>
+          <label for="refresh-interval-select" class="block text-slate-300 font-semibold mb-1">看板自動刷新頻率</label>
+          <select id="refresh-interval-select" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-xl px-3 py-2 outline-none focus:border-cyan-500">
+            <option value="30">每 30 秒</option>
+            <option value="60" selected>每 1 分鐘</option>
+            <option value="300">每 5 分鐘</option>
+            <option value="3600">每 1 小時 (節省頻寬)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="pt-3 border-t border-slate-800 flex justify-end space-x-3">
+        <button id="cancel-settings-btn" class="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700">
+          取消
+        </button>
+        <button id="save-settings-btn" class="px-4 py-2 rounded-xl bg-cyan-600 text-white text-xs font-semibold hover:bg-cyan-500 shadow-md">
+          儲存並更新數據
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- Application State ---
+    const STATE = {
+      isMockMode: true,
+      cwaApiKey: '',
+      proxyUrl: '',
+      refreshIntervalSec: 60,
+      countdownSec: 60,
+      selectedDistrict: '鳳山區',
+      incidentDistrictFilter: 'ALL',
+      incidentSeverityFilter: 'all',
+      incidentSearchKeyword: '',
+      lastUpdatedTime: new Date(),
+      weatherData: null,
+      incidentsData: [],
+      chartInstance: null,
+      timerId: null,
+      retryCount: 0
+    };
+
+    // --- High-fidelity Kaohsiung Mock Datasets for Dashboard Preview ---
+    const MOCK_KAOHSIUNG_WEATHER = {
+      '鳳山區': { temp: 29, feelsLike: 32, condition: '多雲時晴', pop: 20, humidity: 75, wind: '2 級 西南風', icon: 'fa-cloud-sun' },
+      '三民區': { temp: 30, feelsLike: 33, condition: '晴朗午後局部雨', pop: 30, humidity: 72, wind: '2 級 微風', icon: 'fa-cloud-sun-rain' },
+      '左營區': { temp: 29, feelsLike: 31, condition: '晴間多雲', pop: 10, humidity: 70, wind: '3 級 西北風', icon: 'fa-sun' },
+      '苓雅區': { temp: 30, feelsLike: 33, condition: '多雲', pop: 20, humidity: 76, wind: '2 級 西南風', icon: 'fa-cloud' },
+      '鼓山區': { temp: 28, feelsLike: 30, condition: '海風多雲', pop: 15, humidity: 78, wind: '3 級 海風', icon: 'fa-cloud-sun' },
+      '楠梓區': { temp: 30, feelsLike: 32, condition: '晴朗', pop: 10, humidity: 68, wind: '2 級 北風', icon: 'fa-sun' },
+      '小港區': { temp: 29, feelsLike: 32, condition: '多雲短暫雨', pop: 40, humidity: 80, wind: '3 級 偏南風', icon: 'fa-cloud-rain' },
+      '前鎮區': { temp: 29, feelsLike: 31, condition: '多雲', pop: 20, humidity: 75, wind: '2 級 南風', icon: 'fa-cloud' }
+    };
+
+    const MOCK_HOURLY_FORECAST = [
+      { time: '12:00', temp: 30, pop: 20, icon: 'fa-sun' },
+      { time: '14:00', temp: 31, pop: 30, icon: 'fa-cloud-sun-rain' },
+      { time: '16:00', temp: 29, pop: 40, icon: 'fa-cloud-rain' },
+      { time: '18:00', temp: 27, pop: 20, icon: 'fa-cloud-sun' },
+      { time: '20:00', temp: 26, pop: 10, icon: 'fa-moon' },
+      { time: '22:00', temp: 25, pop: 10, icon: 'fa-cloud-moon' }
+    ];
+
+    const MOCK_KAOHSIUNG_INCIDENTS = [
+      {
+        id: 'KCG-20261001-001',
+        time: '10:15',
+        district: '鳳山區',
+        location: '鳳山區 建國路三段與青年路二段口',
+        title: '兩部機車輕微擦撞事故',
+        severity: 'normal', // normal | heavy
+        status: '處理中',
+        type: '交通事故',
+        description: '占用外側車道，已通知轄區員警前往現場指揮，後方車流維持緩慢行進。'
+      },
+      {
+        id: 'KCG-20261001-002',
+        time: '09:42',
+        district: '三民區',
+        location: '三民區 民族一路 (九如一路至建工路段)',
+        title: '營建大貨車故障停擺事件',
+        severity: 'heavy',
+        status: '管制中',
+        type: '車輛故障',
+        description: '佔據中線車道導致回堵至建國路，拖吊車已抵達，請改道自由路。'
+      },
+      {
+        id: 'KCG-20261001-003',
+        time: '09:10',
+        district: '左營區',
+        location: '左營區 翠華路 (靠近新左營高鐵站匝道)',
+        title: '自用小客車追撞事故',
+        severity: 'normal',
+        status: '已排除',
+        type: '交通事故',
+        description: '無人受傷，車輛已移動至路肩，道路恢復雙向通暢。'
+      },
+      {
+        id: 'KCG-20261001-004',
+        time: '08:50',
+        district: '仁武區',
+        location: '國道十號 西向 6K 仁武交流道入口',
+        title: '匝道儀控路段多車煞車不及連環碰',
+        severity: 'heavy',
+        status: '處理中',
+        type: '國道事故',
+        description: '影響主線與匝道銜接，高公局及國道警察正全力協助處理。'
+      },
+      {
+        id: 'KCG-20261001-005',
+        time: '08:30',
+        district: '苓雅區',
+        location: '苓雅區 中山二路與四維四路口',
+        title: '道路地下管線緊急施工障礙',
+        severity: 'normal',
+        status: '提醒',
+        type: '施工路障',
+        description: '封閉慢車道，請機車族遵照標示繞行快車道。'
+      }
+    ];
+
+    // --- Clock & Time Functions ---
+    function updateClock() {
+      const now = new Date();
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      document.getElementById('current-time').textContent = `${hours}:${minutes}:${seconds}`;
+
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1;
+      const date = now.getDate();
+      const days = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'];
+      const dayName = days[now.getDay()];
+      document.getElementById('current-date').textContent = `${year}年${month}月${date}日 ${dayName}`;
+    }
+
+    // --- Render Weather Hourly Chart ---
+    function initWeatherChart() {
+      const ctx = document.getElementById('weatherChart').getContext('2d');
+      const labels = MOCK_HOURLY_FORECAST.map(item => item.time);
+      const temps = MOCK_HOURLY_FORECAST.map(item => item.temp);
+      const pops = MOCK_HOURLY_FORECAST.map(item => item.pop);
+
+      STATE.chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: '氣溫 (°C)',
+              data: temps,
+              borderColor: '#38bdf8',
+              backgroundColor: 'rgba(56, 189, 248, 0.1)',
+              borderWidth: 3,
+              fill: true,
+              tension: 0.4,
+              pointBackgroundColor: '#0284c7',
+              pointRadius: 4
+            },
+            {
+              label: '降雨機率 (%)',
+              data: pops,
+              borderColor: '#818cf8',
+              borderWidth: 2,
+              borderDash: [4, 4],
+              pointRadius: 0,
+              tension: 0.4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: false
+            },
+            tooltip: {
+              backgroundColor: '#0f172a',
+              titleColor: '#e2e8f0',
+              bodyColor: '#38bdf8',
+              borderWidth: 1,
+              borderColor: '#334155'
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { color: '#94a3b8', font: { size: 10 } }
+            },
+            y: {
+              grid: { color: 'rgba(51, 65, 85, 0.3)' },
+              ticks: { color: '#94a3b8', font: { size: 10 } }
+            }
+          }
+        }
+      });
+    }
+
+    // --- Update Weather UI ---
+    function renderWeatherView() {
+      const district = STATE.selectedDistrict;
+      const data = MOCK_KAOHSIUNG_WEATHER[district] || MOCK_KAOHSIUNG_WEATHER['鳳山區'];
+
+      document.getElementById('weather-location').textContent = `高雄市 ${district}`;
+      document.getElementById('weather-temp').textContent = data.temp;
+      document.getElementById('weather-feels').textContent = `體感約 ${data.feelsLike}°C`;
+      document.getElementById('weather-condition').textContent = data.condition;
+      document.getElementById('weather-pop').textContent = `${data.pop}%`;
+      document.getElementById('weather-humidity').textContent = `${data.humidity}%`;
+      document.getElementById('weather-wind').textContent = data.wind;
+
+      // Update Weather Icon
+      const iconEl = document.getElementById('weather-main-icon');
+      iconEl.innerHTML = `<i class="fa-solid ${data.icon}"></i>`;
+
+      // Update Hourly Mini Cards
+      const container = document.getElementById('hourly-cards-container');
+      container.innerHTML = MOCK_HOURLY_FORECAST.map(item => `
+        <div class="bg-slate-900/60 rounded-xl p-2 border border-slate-800">
+          <div class="text-[10px] text-slate-400 mb-1">${item.time}</div>
+          <i class="fa-solid ${item.icon} text-amber-400 text-sm my-1 block"></i>
+          <div class="text-xs font-bold text-slate-200">${item.temp}°</div>
+          <div class="text-[9px] text-cyan-400 mt-0.5">${item.pop}% 降雨</div>
+        </div>
+      `).join('');
+    }
+
+    // --- Render Traffic Incidents List ---
+    function renderIncidentsView() {
+      const container = document.getElementById('incidents-container');
+      const emptyMsg = document.getElementById('no-incidents-msg');
+
+      // Filter Logic
+      let filtered = MOCK_KAOHSIUNG_INCIDENTS.filter(item => {
+        // District Filter
+        if (STATE.incidentDistrictFilter !== 'ALL' && !item.location.includes(STATE.incidentDistrictFilter) && item.district !== STATE.incidentDistrictFilter) {
+          return false;
+        }
+        // Severity Filter
+        if (STATE.incidentSeverityFilter !== 'all' && item.severity !== STATE.incidentSeverityFilter) {
+          return false;
+        }
+        // Keyword Search
+        if (STATE.incidentSearchKeyword.trim() !== '') {
+          const kw = STATE.incidentSearchKeyword.toLowerCase();
+          const matchTitle = item.title.toLowerCase().includes(kw);
+          const matchLoc = item.location.toLowerCase().includes(kw);
+          const matchDesc = item.description.toLowerCase().includes(kw);
+          if (!matchTitle && !matchLoc && !matchDesc) return false;
+        }
+        return true;
+      });
+
+      // Update Stats Badges
+      const heavyCount = MOCK_KAOHSIUNG_INCIDENTS.filter(i => i.severity === 'heavy').length;
+      const normalCount = MOCK_KAOHSIUNG_INCIDENTS.filter(i => i.severity === 'normal').length;
+      document.getElementById('stat-heavy-count').textContent = heavyCount;
+      document.getElementById('stat-normal-count').textContent = normalCount;
+      document.getElementById('incident-count-badge').textContent = `${filtered.length} 則事件`;
+
+      if (filtered.length === 0) {
+        container.classList.add('hidden');
+        emptyMsg.classList.remove('hidden');
+        return;
+      }
+
+      container.classList.remove('hidden');
+      emptyMsg.classList.add('hidden');
+
+      container.innerHTML = filtered.map(item => {
+        const isHeavy = item.severity === 'heavy';
+        const badgeColor = isHeavy 
+          ? 'bg-red-950/80 text-red-400 border-red-800/80' 
+          : 'bg-amber-950/80 text-amber-400 border-amber-800/80';
+        
+        const statusBg = item.status === '已排除' 
+          ? 'bg-emerald-950 text-emerald-400 border-emerald-800' 
+          : 'bg-slate-800 text-slate-300 border-slate-700';
+
+        return `
+          <div class="bg-slate-900/80 hover:bg-slate-800/80 transition-colors rounded-xl p-4 border border-slate-800 shadow-sm relative overflow-hidden group">
+            <div class="absolute left-0 top-0 bottom-0 w-1 ${isHeavy ? 'bg-red-500' : 'bg-amber-500'}"></div>
+            
+            <div class="flex justify-between items-start mb-2 pl-2">
+              <div class="flex items-center space-x-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badgeColor}">
+                  <i class="fa-solid ${isHeavy ? 'fa-triangle-exclamation' : 'fa-car-burst'} mr-1"></i>
+                  ${isHeavy ? '嚴重受阻' : '一般事故'}
+                </span>
+                <span class="px-2 py-0.5 rounded text-[10px] font-semibold border ${statusBg}">
+                  ${item.status}
+                </span>
+                <span class="text-xs text-slate-400 font-mono"><i class="fa-regular fa-clock mr-1"></i>${item.time}</span>
+              </div>
+              <span class="text-[10px] text-slate-500 font-mono">ID: ${item.id}</span>
+            </div>
+
+            <h3 class="text-sm font-bold text-slate-100 pl-2 mb-1 group-hover:text-cyan-300 transition-colors">
+              ${item.title}
+            </h3>
+
+            <p class="text-xs text-cyan-400/90 pl-2 mb-2 font-medium flex items-center gap-1">
+              <i class="fa-solid fa-location-dot text-slate-500"></i> ${item.location}
+            </p>
+
+            <p class="text-xs text-slate-400 pl-2 bg-slate-950/40 p-2 rounded-lg border border-slate-800/60">
+              ${item.description}
+            </p>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // --- Data Fetching Logic (Live or Fallback) ---
+    async function refreshDashboardData() {
+      const statusBadge = document.getElementById('status-badge');
+      const statusText = document.getElementById('status-text');
+      const retryBanner = document.getElementById('error-retry-banner');
+
+      try {
+        if (!STATE.isMockMode && STATE.cwaApiKey) {
+          // Attempt Real Fetch to CWA API for Kaohsiung
+          const cwaUrl = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-C0032-001?Authorization=${STATE.cwaApiKey}&locationName=%E9%AB%98%E9%9B%84%E5%B8%82`;
+          const response = await fetch(cwaUrl);
+          if (!response.ok) throw new Error('CWA API HTTP Error');
+          const data = await response.json();
+          console.log('Real CWA Weather Data Fetched:', data);
+        }
+
+        // Reset error banner on success
+        retryBanner.classList.add('hidden');
+        statusBadge.className = 'flex items-center space-x-2 px-3 py-1.5 rounded-full bg-emerald-950/80 border border-emerald-600/40 text-emerald-400 text-xs font-medium';
+        statusText.textContent = STATE.isMockMode ? '系統示範模式 (正常)' : '實時 API 連線正常';
+        STATE.retryCount = 0;
+
+      } catch (err) {
+        console.warn('API Fetch Exception - Falling back gracefully:', err);
+        STATE.retryCount++;
+        // Graceful Degradation: Show Alert banner but keep cached UI intact
+        retryBanner.classList.remove('hidden');
+        statusBadge.className = 'flex items-center space-x-2 px-3 py-1.5 rounded-full bg-amber-950/80 border border-amber-600/40 text-amber-400 text-xs font-medium';
+        statusText.textContent = `連線重試中 (${STATE.retryCount})`;
+      }
+
+      // Re-render UI with current state/cache
+      renderWeatherView();
+      renderIncidentsView();
+
+      STATE.lastUpdatedTime = new Date();
+      const timeStr = STATE.lastUpdatedTime.toLocaleTimeString('zh-TW', { hour12: false });
+      document.getElementById('last-cache-time').textContent = timeStr;
+      document.getElementById('weather-update-time').textContent = `${timeStr.substring(0, 5)} 更新`;
+    }
+
+    // --- Timer & Countdown Loop ---
+    function startAutoRefreshLoop() {
+      if (STATE.timerId) clearInterval(STATE.timerId);
+
+      STATE.countdownSec = STATE.refreshIntervalSec;
+
+      STATE.timerId = setInterval(() => {
+        STATE.countdownSec--;
+        document.getElementById('refresh-countdown').textContent = STATE.countdownSec;
+
+        // Progress bar calculation
+        const percent = (STATE.countdownSec / STATE.refreshIntervalSec) * 100;
+        document.getElementById('refresh-progress-bar').style.width = `${percent}%`;
+
+        if (STATE.countdownSec <= 0) {
+          STATE.countdownSec = STATE.refreshIntervalSec;
+          refreshDashboardData();
+        }
+      }, 1000);
+    }
+
+    // --- Event Listeners Setup ---
+    function initEventListeners() {
+      // District Weather Selector
+      document.getElementById('district-select').addEventListener('change', (e) => {
+        STATE.selectedDistrict = e.target.value;
+        renderWeatherView();
+      });
+
+      // Incident District Filter
+      document.getElementById('incident-district-filter').addEventListener('change', (e) => {
+        STATE.incidentDistrictFilter = e.target.value;
+        renderIncidentsView();
+      });
+
+      // Incident Keyword Search
+      document.getElementById('incident-search-input').addEventListener('input', (e) => {
+        STATE.incidentSearchKeyword = e.target.value;
+        renderIncidentsView();
+      });
+
+      // Incident Severity Filter Buttons
+      document.querySelectorAll('.incident-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.incident-filter-btn').forEach(b => {
+            b.classList.remove('bg-cyan-600', 'text-white');
+            b.classList.add('bg-slate-800', 'text-slate-300');
+          });
+          btn.classList.remove('bg-slate-800', 'text-slate-300');
+          btn.classList.add('bg-cyan-600', 'text-white');
+
+          STATE.incidentSeverityFilter = btn.dataset.filter;
+          renderIncidentsView();
+        });
+      });
+
+      // Modal Controls
+      const modal = document.getElementById('settings-modal');
+      document.getElementById('open-settings-btn').addEventListener('click', () => modal.classList.remove('hidden'));
+      document.getElementById('close-settings-btn').addEventListener('click', () => modal.classList.add('hidden'));
+      document.getElementById('cancel-settings-btn').addEventListener('click', () => modal.classList.add('hidden'));
+
+      // Mode Toggles in Modal
+      const mockBtn = document.getElementById('mode-mock-btn');
+      const liveBtn = document.getElementById('mode-live-btn');
+
+      mockBtn.addEventListener('click', () => {
+        STATE.isMockMode = true;
+        mockBtn.className = 'p-3 rounded-xl border border-cyan-500/80 bg-cyan-950/40 text-cyan-200 font-medium text-left flex items-center justify-between';
+        liveBtn.className = 'p-3 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-400 font-medium text-left flex items-center justify-between';
+      });
+
+      liveBtn.addEventListener('click', () => {
+        STATE.isMockMode = false;
+        liveBtn.className = 'p-3 rounded-xl border border-cyan-500/80 bg-cyan-950/40 text-cyan-200 font-medium text-left flex items-center justify-between';
+        mockBtn.className = 'p-3 rounded-xl border border-slate-800 bg-slate-900/60 text-slate-400 font-medium text-left flex items-center justify-between';
+      });
+
+      // Save Settings Button
+      document.getElementById('save-settings-btn').addEventListener('click', () => {
+        STATE.cwaApiKey = document.getElementById('cwa-key-input').value.trim();
+        STATE.proxyUrl = document.getElementById('proxy-url-input').value.trim();
+        STATE.refreshIntervalSec = parseInt(document.getElementById('refresh-interval-select').value, 10);
+
+        document.getElementById('data-mode-badge').textContent = STATE.isMockMode ? '預覽示範模式' : '實時 API 模式';
+
+        modal.classList.add('hidden');
+        startAutoRefreshLoop();
+        refreshDashboardData();
+      });
+    }
+
+    // --- Window Load Initialization ---
+    window.onload = function () {
+      updateClock();
+      setInterval(updateClock, 1000);
+
+      initWeatherChart();
+      renderWeatherView();
+      renderIncidentsView();
+      initEventListeners();
+
+      startAutoRefreshLoop();
+      refreshDashboardData();
+    };
+  </script>
+</body>
+</html>
